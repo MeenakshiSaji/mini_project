@@ -31,8 +31,8 @@ urlpatterns = [
     path('admin/', admin.site.urls),
     path('signup/', signup, name='signup'),
     path('signin/', signin, name='signin'),
-    path('chatbot_success/', chatbot_success, name='chatbot_success'),
+    path('chatbot_success/<uidb64>/<token>/', chatbot_success, name='chatbot_success'),
     path('password-reset/', password_reset_request, name='password_reset_request'),
-    path('password-reset/<uidb64>/<token>/', password_reset_confirm, name='password_reset_confirm')
+    path('password-reset/<uidb64>/<tok>/', password_reset_confirm, name='password_reset_confirm')
 ]
 

@@ -9,17 +9,39 @@ from django.utils.http import urlsafe_base64_encode,urlsafe_base64_decode
 from django.utils.encoding import force_bytes
 from django.contrib.auth import update_session_auth_hash
 
+def generate_token(user):
+    uid = urlsafe_base64_encode(force_bytes(user.pk))
+    token = default_token_generator.make_token(user)
+    return uid, token
+
 def signin(request):
     if request.method == 'POST':
         username = request.POST.get('username')
         password = request.POST.get('password')
         user = authenticate(request, username=username, password=password)
+
         if user is not None:
             login(request, user)
-            return redirect('chatbot_success')
+            uid, token = generate_token(user)  # Generate token for the user session
+            success_url = reverse('chatbot_success', args=[uid, token])
+            return redirect(success_url)  # Redirect to success page with token
         else:
             messages.error(request, 'Invalid username or password.')
+
     return render(request, 'signin.html')
+
+def chatbot_success(request, uidb64, token):
+    try:
+        uid = urlsafe_base64_decode(uidb64).decode()
+        user = User.objects.get(pk=uid)
+
+        if not default_token_generator.check_token(user, token):
+            raise Exception("Invalid token")
+
+        return render(request, 'chatbot.html')  # The actual success page
+    except (User.DoesNotExist, Exception):
+        messages.error(request, 'Invalid token or user.')
+        return redirect('signin')
 
 def signup(request):
     if request.method == 'POST':
@@ -35,14 +57,13 @@ def signup(request):
             password = form.cleaned_data.get('password1')
             user = authenticate(username=username, password=password)
             login(request, user)
-            return redirect('chatbot_success')  # Redirect to a success page
+            uid, token = generate_token(user)
+            success_url = reverse('chatbot_success', args=[uid, token])
+            return redirect(success_url) # Redirect to a success page
     else:
         form = RegistrationForm()
     return render(request, 'signup.html', {'form': form})
 
-
-def chatbot_success(request):
-  return render(request, 'chatbot.html')
 
 def password_reset_request(request):
     if request.method == 'POST':
@@ -50,12 +71,12 @@ def password_reset_request(request):
         if form.is_valid():
             email = form.cleaned_data['email']
             try:
-                user = User.objects.get(email=email)
+                reset = User.objects.get(email=email)
                 # Generate token and user ID
-                uid = urlsafe_base64_encode(force_bytes(user.pk))
-                token = default_token_generator.make_token(user)
+                id = urlsafe_base64_encode(force_bytes(reset.pk))
+                tok = default_token_generator.make_token(reset)
                 # Redirect to the reset page with token and UID
-                return redirect(reverse('password_reset_confirm', args=[uid, token]))
+                return redirect(reverse('password_reset_confirm', args=[id, tok]))
             except User.DoesNotExist:
                 # Handle case where user does not exist
                 form.add_error('email', 'Email not found')
@@ -63,12 +84,12 @@ def password_reset_request(request):
         form = PasswordResetRequestForm()
     return render(request, 'password_reset.html', {'form': form})
 
-def password_reset_confirm(request, uidb64, token):
+def password_reset_confirm(request, uidb64, tok):
     # Decode UID and validate the token
     try:
-        uid = urlsafe_base64_decode(uidb64).decode()
-        user = User.objects.get(pk=uid)
-        if not default_token_generator.check_token(user, token):
+        id = urlsafe_base64_decode(uidb64).decode()
+        reset = User.objects.get(pk=id)
+        if not default_token_generator.check_token(reset, tok):
             return render(request, 'invalid_token.html')  # Return an error page if token is invalid
     except (User.DoesNotExist, ValueError, TypeError, OverflowError):
         return render(request, 'invalid_token.html')
@@ -77,11 +98,12 @@ def password_reset_confirm(request, uidb64, token):
         form = SetNewPasswordForm(request.POST)
         if form.is_valid():
             # Set the new password
-            user.set_password(form.cleaned_data['password'])
-            user.save()
+            reset.set_password(form.cleaned_data['password'])
+            reset.save()
             # Optionally re-authenticate the user
-            update_session_auth_hash(request, user)
-            return redirect(reverse('chatbot_success'))  # Redirect to login or a success page
+            update_session_auth_hash(request, reset)
+            messages.success(request, "Your password has been reset successfully.")
+            return redirect(reverse('signin'))  # Redirect to login or a success page
     else:
         form = SetNewPasswordForm()
     
